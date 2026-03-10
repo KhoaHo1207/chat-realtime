@@ -2,7 +2,9 @@
 
 import { useUsername } from "@/hooks/use-username";
 import { client } from "@/lib/client";
-import { useMutation } from "@tanstack/react-query";
+import { useRealtime } from "@/lib/realtime-client";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
 import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
 
@@ -14,13 +16,24 @@ function formatTimeRemaining(timeRemaining: number) {
 
 export default function Page() {
   const { roomId } = useParams<{ roomId: string }>();
-  const { username, setUsername } = useUsername();
+  const { username } = useUsername();
   const [copyStatus, setCopyStatus] = useState<string>("COPY");
-  const [timeRemaining, setTimeRemaining] = useState<number | null>(121);
+  const [timeRemaining] = useState<number | null>(121);
   const [message, setMessage] = useState<string>("");
 
   const messageref = useRef<HTMLInputElement>(null);
 
+  const { data: messagesData, refetch: refetchMessages } = useQuery({
+    queryKey: ["messages", roomId],
+    queryFn: async () => {
+      const res = await client.messages.get({
+        query: {
+          roomId,
+        },
+      });
+      return res.data;
+    },
+  });
   const { mutate: sendMessage, isPending } = useMutation({
     mutationFn: async ({ text }: { text: string }) => {
       await client.messages.post(
@@ -34,9 +47,20 @@ export default function Page() {
           },
         },
       );
+      setMessage("");
     },
   });
-  const copyLink = (roomId: string) => {
+
+  useRealtime({
+    channels: [roomId],
+    events: ["chat.message", "chat.destroy"],
+    onData: ({ event }) => {
+      if (event === "chat.message") {
+        refetchMessages();
+      }
+    },
+  });
+  const copyLink = () => {
     const url = window.location.href;
     navigator.clipboard.writeText(url);
     setCopyStatus("COPIED");
@@ -44,6 +68,8 @@ export default function Page() {
       setCopyStatus("COPY");
     }, 2000);
   };
+
+  console.log(messagesData);
   return (
     <main className="flex h-screen max-h-screen flex-col overflow-hidden">
       <header className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900/30 p-4">
@@ -55,7 +81,7 @@ export default function Page() {
               <button
                 aria-label="Copy link"
                 className="cursor-copy rounded-md bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
-                onClick={() => copyLink(roomId)}
+                onClick={copyLink}
               >
                 {copyStatus}
               </button>
@@ -86,7 +112,38 @@ export default function Page() {
         </button>
       </header>
 
-      <div className="scrollbar-thin flex-1 space-y-4 overflow-y-auto p-4"></div>
+      <div className="scrollbar-thin flex-1 space-y-4 overflow-y-auto p-4">
+        {messagesData && messagesData.messages.length === 0 ? (
+          <div className="flex h-full items-center justify-center">
+            <p className="text-zinc-600">
+              No messages yet, start the conversation
+            </p>
+          </div>
+        ) : (
+          messagesData?.messages.map((message) => (
+            <div
+              key={message.id}
+              className="flex flex-col items-start justify-center"
+            >
+              <div className="mb-1 flex items-baseline gap-3">
+                <span
+                  className={`text-xs font-bold ${message.sender === username ? "text-green-500" : "text-blue-500"}`}
+                >
+                  {message.sender === username ? "YOU" : message.sender}
+                </span>
+
+                <span className="text-[10px] text-zinc-600">
+                  {format(message.timestamp, "HH:mm:ss")}
+                </span>
+              </div>
+
+              <p className="text-sm leading-relaxed break-all text-zinc-300">
+                {message.text}
+              </p>
+            </div>
+          ))
+        )}
+      </div>
 
       <div className="border-t border-zinc-800 bg-zinc-900/30 p-4">
         <div className="flex gap-4">

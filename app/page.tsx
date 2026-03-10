@@ -6,7 +6,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 
 export default function Home() {
-  const { username, setUsername } = useUsername();
+  const { username } = useUsername();
   const router = useRouter();
 
   const { mutate: createRoom } = useMutation({
