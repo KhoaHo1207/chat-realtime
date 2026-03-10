@@ -24,6 +24,7 @@ Set the Upstash credentials before running locally or on hosting:
 ```env
 UPSTASH_REDIS_REST_URL="https://<your-instance>.upstash.io"
 UPSTASH_REDIS_REST_TOKEN="<your-token>"
+NEXT_PUBLIC_APP_URL="https://your-deployed-domain.example" # used by the client when rendering on the server
 ```
 
 ## Development
