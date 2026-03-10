@@ -1,5 +1,4 @@
 import { redis } from "@/lib/redis";
-import { UndefinedInitialDataInfiniteOptions } from "@tanstack/react-query";
 import Elysia from "elysia";
 
 class AuthError extends Error {
@@ -29,7 +28,7 @@ export const authMiddleware = new Elysia({
       throw new AuthError("Missng roomId or token.");
     }
 
-    const connected = await redis.hget<string[]>(`meta.${roomId}`, "connected");
+    const connected = await redis.hget<string[]>(`meta: ${roomId}`, "connected");
 
     if (!connected?.includes(token)) {
       throw new AuthError("Invalid token");

@@ -1,5 +1,8 @@
 "use client";
 
+import { useUsername } from "@/hooks/use-username";
+import { client } from "@/lib/client";
+import { useMutation } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
 
@@ -11,12 +14,28 @@ function formatTimeRemaining(timeRemaining: number) {
 
 export default function Page() {
   const { roomId } = useParams<{ roomId: string }>();
-
+  const { username, setUsername } = useUsername();
   const [copyStatus, setCopyStatus] = useState<string>("COPY");
   const [timeRemaining, setTimeRemaining] = useState<number | null>(121);
   const [message, setMessage] = useState<string>("");
 
   const messageref = useRef<HTMLInputElement>(null);
+
+  const { mutate: sendMessage, isPending } = useMutation({
+    mutationFn: async ({ text }: { text: string }) => {
+      await client.messages.post(
+        {
+          sender: username,
+          text: text,
+        },
+        {
+          query: {
+            roomId: roomId as string,
+          },
+        },
+      );
+    },
+  });
   const copyLink = (roomId: string) => {
     const url = window.location.href;
     navigator.clipboard.writeText(url);
@@ -86,6 +105,7 @@ export default function Page() {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && message.trim() !== "") {
                   e.preventDefault();
+                  sendMessage({ text: message });
                   messageref.current?.focus();
                   setMessage("");
                 }
@@ -93,7 +113,15 @@ export default function Page() {
             />
           </div>
 
-          <button className="cursor-pointer bg-zinc-800 px-6 text-sm font-bold text-zinc-400 transition-all hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50">
+          <button
+            className="cursor-pointer bg-zinc-800 px-6 text-sm font-bold text-zinc-400 transition-all hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => {
+              sendMessage({ text: message });
+              messageref.current?.focus();
+              setMessage("");
+            }}
+            disabled={message.trim() === "" || isPending}
+          >
             SEND
           </button>
         </div>
