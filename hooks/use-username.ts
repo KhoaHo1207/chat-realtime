@@ -1,22 +1,8 @@
-"use client";
-
-import { useEffect, useState } from "react";
 import { nanoid } from "nanoid";
+import { useEffect, useState } from "react";
 
+const ANIMALS = ["wolf", "hawk", "bear", "shark"];
 const STORAGE_KEY = "chat_username";
-
-const ANIMALS = [
-  "wolf",
-  "cat",
-  "dog",
-  "lion",
-  "tiger",
-  "bear",
-  "zebra",
-  "giraffe",
-  "elephant",
-  "rhino",
-];
 
 const generateUsername = () => {
   const word = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
@@ -24,7 +10,7 @@ const generateUsername = () => {
 };
 
 export const useUsername = () => {
-  const [username, setUsername] = useState<string>("");
+  const [username, setUsername] = useState("");
 
   useEffect(() => {
     const main = () => {
@@ -39,8 +25,9 @@ export const useUsername = () => {
       localStorage.setItem(STORAGE_KEY, generated);
       setUsername(generated);
     };
-    main();
-  }, [username]);
 
-  return { username, setUsername };
+    main();
+  }, []);
+
+  return { username };
 };

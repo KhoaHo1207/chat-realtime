@@ -5,49 +5,77 @@ import { client } from "@/lib/client";
 import { useRealtime } from "@/lib/realtime-client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { useParams } from "next/navigation";
-import { useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { use, useEffect, useRef, useState } from "react";
 
-function formatTimeRemaining(timeRemaining: number) {
-  const minutes = Math.floor(timeRemaining / 60);
-  const seconds = timeRemaining % 60;
-  return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+function formatTimeRemaining(seconds: number) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-export default function Page() {
-  const { roomId } = useParams<{ roomId: string }>();
+const Page = () => {
+  const params = useParams();
+  const roomId = params.roomId as string;
+
+  const router = useRouter();
+
   const { username } = useUsername();
-  const [copyStatus, setCopyStatus] = useState<string>("COPY");
-  const [timeRemaining] = useState<number | null>(121);
-  const [message, setMessage] = useState<string>("");
+  const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const messageref = useRef<HTMLInputElement>(null);
+  const [copyStatus, setCopyStatus] = useState("COPY");
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
 
-  const { data: messagesData, refetch: refetchMessages } = useQuery({
-    queryKey: ["messages", roomId],
+  const { data: ttlData } = useQuery({
+    queryKey: ["ttl", roomId],
     queryFn: async () => {
-      const res = await client.messages.get({
-        query: {
-          roomId,
-        },
-      });
+      const res = await client.room.ttl.get({ query: { roomId } });
       return res.data;
     },
   });
+
+  useEffect(() => {
+    if (ttlData?.ttl !== undefined) setTimeRemaining(ttlData.ttl);
+  }, [ttlData]);
+
+  useEffect(() => {
+    if (timeRemaining === null || timeRemaining < 0) return;
+
+    if (timeRemaining === 0) {
+      router.push("/?destroyed=true");
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setTimeRemaining((prev) => {
+        if (prev === null || prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [timeRemaining, router]);
+
+  const { data: messages, refetch } = useQuery({
+    queryKey: ["messages", roomId],
+    queryFn: async () => {
+      const res = await client.messages.get({ query: { roomId } });
+      return res.data;
+    },
+  });
+
   const { mutate: sendMessage, isPending } = useMutation({
     mutationFn: async ({ text }: { text: string }) => {
       await client.messages.post(
-        {
-          sender: username,
-          text: text,
-        },
-        {
-          query: {
-            roomId: roomId as string,
-          },
-        },
+        { sender: username, text },
+        { query: { roomId } },
       );
-      setMessage("");
+
+      setInput("");
     },
   });
 
@@ -56,20 +84,28 @@ export default function Page() {
     events: ["chat.message", "chat.destroy"],
     onData: ({ event }) => {
       if (event === "chat.message") {
-        refetchMessages();
+        refetch();
+      }
+
+      if (event === "chat.destroy") {
+        router.push("/?destroyed=true");
       }
     },
   });
+
+  const { mutate: destroyRoom } = useMutation({
+    mutationFn: async () => {
+      await client.room.delete(null, { query: { roomId } });
+    },
+  });
+
   const copyLink = () => {
     const url = window.location.href;
     navigator.clipboard.writeText(url);
-    setCopyStatus("COPIED");
-    setTimeout(() => {
-      setCopyStatus("COPY");
-    }, 2000);
+    setCopyStatus("COPIED!");
+    setTimeout(() => setCopyStatus("COPY"), 2000);
   };
 
-  console.log(messagesData);
   return (
     <main className="flex h-screen max-h-screen flex-col overflow-hidden">
       <header className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900/30 p-4">
@@ -77,11 +113,12 @@ export default function Page() {
           <div className="flex flex-col">
             <span className="text-xs text-zinc-500 uppercase">Room ID</span>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-green-500">{roomId}</span>
+              <span className="truncate font-bold text-green-500">
+                {roomId.slice(0, 10) + "..."}
+              </span>
               <button
-                aria-label="Copy link"
-                className="cursor-copy rounded-md bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
                 onClick={copyLink}
+                className="rounded bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
               >
                 {copyStatus}
               </button>
@@ -95,7 +132,11 @@ export default function Page() {
               Self-Destruct
             </span>
             <span
-              className={`flex items-center gap-2 text-sm font-bold ${timeRemaining !== null && timeRemaining < 60 ? "text-red-500" : "text-amber-500"}`}
+              className={`flex items-center gap-2 text-sm font-bold ${
+                timeRemaining !== null && timeRemaining < 60
+                  ? "text-red-500"
+                  : "text-amber-500"
+              }`}
             >
               {timeRemaining !== null
                 ? formatTimeRemaining(timeRemaining)
@@ -105,44 +146,47 @@ export default function Page() {
         </div>
 
         <button
+          onClick={() => destroyRoom()}
           className="group flex items-center gap-2 rounded bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-400 transition-all hover:bg-red-600 hover:text-white disabled:opacity-50"
-          aria-label="Destroy now"
         >
-          <span className="group-hover:animate-pulse">💣</span> DESTROY NOW
+          <span className="group-hover:animate-pulse">💣</span>
+          DESTROY NOW
         </button>
       </header>
 
+      {/* MESSAGES */}
       <div className="scrollbar-thin flex-1 space-y-4 overflow-y-auto p-4">
-        {messagesData && messagesData.messages.length === 0 ? (
+        {messages?.messages.length === 0 && (
           <div className="flex h-full items-center justify-center">
-            <p className="text-zinc-600">
-              No messages yet, start the conversation
+            <p className="font-mono text-sm text-zinc-600">
+              No messages yet, start the conversation.
             </p>
           </div>
-        ) : (
-          messagesData?.messages.map((message) => (
-            <div
-              key={message.id}
-              className="flex flex-col items-start justify-center"
-            >
+        )}
+
+        {messages?.messages.map((msg) => (
+          <div key={msg.id} className="flex flex-col items-start">
+            <div className="group max-w-[80%]">
               <div className="mb-1 flex items-baseline gap-3">
                 <span
-                  className={`text-xs font-bold ${message.sender === username ? "text-green-500" : "text-blue-500"}`}
+                  className={`text-xs font-bold ${
+                    msg.sender === username ? "text-green-500" : "text-blue-500"
+                  }`}
                 >
-                  {message.sender === username ? "YOU" : message.sender}
+                  {msg.sender === username ? "YOU" : msg.sender}
                 </span>
 
                 <span className="text-[10px] text-zinc-600">
-                  {format(message.timestamp, "HH:mm:ss")}
+                  {format(msg.timestamp, "HH:mm")}
                 </span>
               </div>
 
               <p className="text-sm leading-relaxed break-all text-zinc-300">
-                {message.text}
+                {msg.text}
               </p>
             </div>
-          ))
-        )}
+          </div>
+        ))}
       </div>
 
       <div className="border-t border-zinc-800 bg-zinc-900/30 p-4">
@@ -152,32 +196,28 @@ export default function Page() {
               {">"}
             </span>
             <input
-              autoFocus={true}
+              autoFocus
               type="text"
-              className="w-full border border-zinc-800 bg-black py-3 pr-4 pl-8 text-sm text-zinc-100 transition-colors placeholder:text-zinc-700 focus:border-zinc-700 focus:outline-none"
-              placeholder="Type your message here..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              ref={messageref}
+              value={input}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && message.trim() !== "") {
-                  e.preventDefault();
-                  sendMessage({ text: message });
-                  messageref.current?.focus();
-                  setMessage("");
+                if (e.key === "Enter" && input.trim()) {
+                  sendMessage({ text: input });
+                  inputRef.current?.focus();
                 }
               }}
+              placeholder="Type message..."
+              onChange={(e) => setInput(e.target.value)}
+              className="w-full border border-zinc-800 bg-black py-3 pr-4 pl-8 text-sm text-zinc-100 transition-colors placeholder:text-zinc-700 focus:border-zinc-700 focus:outline-none"
             />
           </div>
 
           <button
-            className="cursor-pointer bg-zinc-800 px-6 text-sm font-bold text-zinc-400 transition-all hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
             onClick={() => {
-              sendMessage({ text: message });
-              messageref.current?.focus();
-              setMessage("");
+              sendMessage({ text: input });
+              inputRef.current?.focus();
             }}
-            disabled={message.trim() === "" || isPending}
+            disabled={!input.trim() || isPending}
+            className="cursor-pointer bg-zinc-800 px-6 text-sm font-bold text-zinc-400 transition-all hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
             SEND
           </button>
@@ -185,4 +225,6 @@ export default function Page() {
       </div>
     </main>
   );
-}
+};
+
+export default Page;

@@ -8,16 +8,12 @@ class AuthError extends Error {
   }
 }
 
-export const authMiddleware = new Elysia({
-  name: "auth",
-})
+export const authMiddleware = new Elysia({ name: "auth" })
   .error({ AuthError })
-  .onError(({ error, set }) => {
-    if (error instanceof AuthError) {
+  .onError(({ code, set }) => {
+    if (code === "AuthError") {
       set.status = 401;
-      return {
-        error: error.message ?? "Unauthorized",
-      };
+      return { error: "Unauthorized" };
     }
   })
   .derive({ as: "scoped" }, async ({ query, cookie }) => {
@@ -25,20 +21,14 @@ export const authMiddleware = new Elysia({
     const token = cookie["x-auth-token"].value as string | undefined;
 
     if (!roomId || !token) {
-      throw new AuthError("Missng roomId or token.");
+      throw new AuthError("Missing roomId or token.");
     }
 
-    const connected = await redis.hget<string[]>(`meta: ${roomId}`, "connected");
+    const connected = await redis.hget<string[]>(`meta:${roomId}`, "connected");
 
     if (!connected?.includes(token)) {
       throw new AuthError("Invalid token");
     }
 
-    return {
-      auth: {
-        roomId,
-        token,
-        connected,
-      },
-    };
+    return { auth: { roomId, token, connected } };
   });
