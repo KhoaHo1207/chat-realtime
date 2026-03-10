@@ -1,11 +1,11 @@
 import { redis } from "@/lib/redis";
-import { Elysia, t } from "elysia";
+import { Elysia } from "elysia";
 import { nanoid } from "nanoid";
 import { authMiddleware } from "./auth";
 import { z } from "zod";
 import { Message, realtime } from "@/lib/realtime";
 
-const ROOM_TTL_SECONDS = 60 * 10;
+const ROOM_TTL_SECONDS = 1 * 60;
 
 const rooms = new Elysia({ prefix: "/room" })
   .post("/create", async () => {

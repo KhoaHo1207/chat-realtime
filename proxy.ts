@@ -6,15 +6,12 @@ export const proxy = async (req: NextRequest) => {
   const pathname = req.nextUrl.pathname;
 
   const roomMatch = pathname.match(/^\/room\/([^/]+)$/);
-
-  if (!roomMatch) {
-    return NextResponse.redirect(new URL("/", req.url));
-  }
+  if (!roomMatch) return NextResponse.redirect(new URL("/", req.url));
 
   const roomId = roomMatch[1];
 
   const meta = await redis.hgetall<{ connected: string[]; createdAt: number }>(
-    `meta: ${roomId}`,
+    `meta:${roomId}`,
   );
 
   if (!meta) {
@@ -23,13 +20,16 @@ export const proxy = async (req: NextRequest) => {
 
   const existingToken = req.cookies.get("x-auth-token")?.value;
 
+  // USER IS ALLOWED TO JOIN ROOM
   if (existingToken && meta.connected.includes(existingToken)) {
     return NextResponse.next();
   }
 
+  // USER IS NOT ALLOWED TO JOIN
   if (meta.connected.length >= 2) {
     return NextResponse.redirect(new URL("/?error=room-full", req.url));
   }
+
   const response = NextResponse.next();
 
   const token = nanoid();
@@ -39,12 +39,12 @@ export const proxy = async (req: NextRequest) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict",
-    maxAge: 60 * 60 * 24 * 30, // 30 days
   });
 
-  await redis.hset(`meta: ${roomId}`, {
+  await redis.hset(`meta:${roomId}`, {
     connected: [...meta.connected, token],
   });
+
   return response;
 };
 
